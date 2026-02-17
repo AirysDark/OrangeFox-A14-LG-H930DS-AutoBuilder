@@ -31,8 +31,8 @@ echo "==============================================="
 
 AVAILABLE=$(df --output=avail -BG "$ROOT" | tail -1 | tr -dc '0-9')
 
-if [ "$AVAILABLE" -lt 100 ]; then
-    echo "❌ Minimum 100GB free space required."
+if [ "$AVAILABLE" -lt 50 ]; then
+    echo "❌ Minimum 50GB free space required."
     exit 1
 fi
 
