@@ -1,62 +1,50 @@
 #!/bin/bash
 
-# ==============================
-# OrangeFox Android 14 Build Script
-# LG V30 (joan)
-# ==============================
+# ==========================================
+# OrangeFox Android 14 Fully Automatic Builder
+# LG V30 H930DS (joan)
+# ==========================================
 
 set -e
 
+ROOT=$HOME/android14
+THREADS=$(nproc)
+LOGFILE=$ROOT/build.log
+
 echo "==============================================="
-echo " OrangeFox Android 14 Builder"
+echo " OrangeFox Android 14 Automatic Builder"
 echo " LG V30 H930DS (joan)"
 echo "==============================================="
-echo ""
 
 # --------------------------------
-# Ask for Build Directory
+# Pre-flight checks
 # --------------------------------
-read -p "Enter build directory [default: \$HOME/android14]: " USER_ROOT
-ROOT=${USER_ROOT:-$HOME/android14}
 
-# --------------------------------
-# Ask for Thread Count
-# --------------------------------
-read -p "Enter build threads (CPU cores) [default: 4]: " USER_THREADS
-THREADS=${USER_THREADS:-4}
+echo "=== Checking Disk Space ==="
+AVAILABLE=$(df --output=avail -BG "$HOME" | tail -1 | tr -dc '0-9')
 
-echo ""
-echo "Build Directory: $ROOT"
-echo "Threads: $THREADS"
-echo ""
-read -p "Continue? (y/n): " confirm
-if [[ "$confirm" != "y" ]]; then
-    echo "Aborted."
+if [ "$AVAILABLE" -lt 80 ]; then
+    echo "❌ ERROR: At least 80GB free space required."
     exit 1
 fi
 
+echo "Disk space OK (${AVAILABLE}GB available)"
+
+echo "=== Detecting CPU Threads ==="
+echo "Using $THREADS threads"
+
 # --------------------------------
-# Git Identity Check
+# Ensure Git Identity
 # --------------------------------
-echo ""
-echo "=== Checking Git Identity ==="
 
-if ! git config --global user.name >/dev/null 2>&1; then
-    read -p "Enter your Git name: " gitname
-    git config --global user.name "$gitname"
-fi
-
-if ! git config --global user.email >/dev/null 2>&1; then
-    read -p "Enter your Git email: " gitemail
-    git config --global user.email "$gitemail"
-fi
-
-echo "Git identity configured."
-echo ""
+echo "=== Setting Git Identity ==="
+git config --global user.name "Android Builder"
+git config --global user.email "builder@local"
 
 # --------------------------------
 # Install Dependencies
 # --------------------------------
+
 echo "=== Installing Dependencies ==="
 sudo dpkg --add-architecture i386
 sudo apt update
@@ -70,8 +58,9 @@ sudo apt install -y \
     openjdk-11-jdk python3
 
 # --------------------------------
-# Setup repo
+# Setup repo tool
 # --------------------------------
+
 echo "=== Setting up repo tool ==="
 mkdir -p ~/bin
 curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
@@ -79,28 +68,25 @@ chmod a+x ~/bin/repo
 export PATH=~/bin:$PATH
 
 # --------------------------------
-# Create Build Directory
+# Prepare Build Directory
 # --------------------------------
-echo "=== Creating Android 14 Directory ==="
+
+echo "=== Creating Build Directory ==="
 mkdir -p "$ROOT"
 cd "$ROOT"
 
 # --------------------------------
-# Initialize LineageOS
+# Initialize LineageOS 21
 # --------------------------------
-echo "=== Initializing LineageOS 21 (Android 14) ==="
-repo init -u https://github.com/LineageOS/android.git -b lineage-21.0
+
+if [ ! -d ".repo" ]; then
+    echo "=== Initializing LineageOS 21 (Android 14) ==="
+    repo init -u https://github.com/LineageOS/android.git -b lineage-21.0
+fi
 
 # --------------------------------
 # Sync Source
 # --------------------------------
-echo ""
-echo "⚠ This will download 40-60GB."
-read -p "Proceed with repo sync? (y/n): " syncconfirm
-if [[ "$syncconfirm" != "y" ]]; then
-    echo "Aborted."
-    exit 1
-fi
 
 echo "=== Syncing Source ==="
 repo sync -j"$THREADS" --force-sync --no-clone-bundle --no-tags
@@ -108,31 +94,42 @@ repo sync -j"$THREADS" --force-sync --no-clone-bundle --no-tags
 # --------------------------------
 # Inject OrangeFox
 # --------------------------------
-echo "=== Replacing Recovery with OrangeFox fox_14.1 ==="
+
+echo "=== Injecting OrangeFox fox_14.1 ==="
 rm -rf bootable/recovery
 git clone -b fox_14.1 https://gitlab.com/OrangeFox/bootable/Recovery.git bootable/recovery
 
 # --------------------------------
 # Clone Device Tree
 # --------------------------------
-echo "=== Cloning LG V30 Device Tree ==="
-git clone https://github.com/LineageOS/android_device_lge_joan.git device/lge/joan
+
+if [ ! -d "device/lge/joan" ]; then
+    echo "=== Cloning Device Tree ==="
+    git clone https://github.com/LineageOS/android_device_lge_joan.git device/lge/joan
+fi
 
 # --------------------------------
 # Clone Kernel
 # --------------------------------
-echo "=== Cloning Kernel ==="
-git clone https://github.com/LineageOS/android_kernel_lge_msm8998.git kernel/lge/msm8998
+
+if [ ! -d "kernel/lge/msm8998" ]; then
+    echo "=== Cloning Kernel ==="
+    git clone https://github.com/LineageOS/android_kernel_lge_msm8998.git kernel/lge/msm8998
+fi
 
 # --------------------------------
 # Clone Vendor
 # --------------------------------
-echo "=== Cloning Vendor Blobs ==="
-git clone https://github.com/TheMuppets/proprietary_vendor_lge.git vendor/lge
+
+if [ ! -d "vendor/lge" ]; then
+    echo "=== Cloning Vendor Blobs ==="
+    git clone https://github.com/TheMuppets/proprietary_vendor_lge.git vendor/lge
+fi
 
 # --------------------------------
 # Enable ccache
 # --------------------------------
+
 echo "=== Enabling ccache ==="
 export USE_CCACHE=1
 ccache -M 30G
@@ -140,14 +137,19 @@ ccache -M 30G
 # --------------------------------
 # Start Build
 # --------------------------------
+
 echo "=== Starting Build ==="
 source build/envsetup.sh
 lunch lineage_joan-eng
-mka recoveryimage -j"$THREADS"
+
+echo "=== Building Recovery (logging to build.log) ==="
+mka recoveryimage -j"$THREADS" 2>&1 | tee "$LOGFILE"
 
 echo ""
-echo "=================================="
-echo " Build Complete."
-echo " Recovery image location:"
+echo "==============================================="
+echo " BUILD COMPLETE"
+echo " Recovery Image:"
 echo " $ROOT/out/target/product/joan/recovery.img"
-echo "=================================="
+echo " Log File:"
+echo " $LOGFILE"
+echo "==============================================="
