@@ -2,15 +2,52 @@ name: OrangeFox Android 14 Build
 
 on:
   workflow_dispatch:
+    inputs:
+      device:
+        description: "Device codename"
+        required: true
+        default: "joan"
+
+concurrency:
+  group: orangefox-build
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    env:
+      USE_CCACHE: 1
+      CCACHE_DIR: ~/.ccache
+      DEVICE: ${{ github.event.inputs.device }}
 
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      # -----------------------------
+      # Cache repo metadata
+      # -----------------------------
+      - name: Cache repo data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/android14/.repo
+          key: repo-${{ runner.os }}
+
+      # -----------------------------
+      # Cache ccache
+      # -----------------------------
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}
+
+      # -----------------------------
+      # Install dependencies
+      # -----------------------------
       - name: Install Dependencies
         run: |
           sudo dpkg --add-architecture i386
@@ -22,19 +59,44 @@ jobs:
             pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
             openjdk-11-jdk python3
 
+      # -----------------------------
+      # Setup repo tool
+      # -----------------------------
       - name: Setup Repo Tool
         run: |
           mkdir -p ~/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
           echo "$HOME/bin" >> $GITHUB_PATH
 
+      # -----------------------------
+      # Build
+      # -----------------------------
       - name: Build OrangeFox
         run: |
           bash scripts/build_orangefox_a14.sh
 
+      # -----------------------------
+      # Upload artifact
+      # -----------------------------
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OrangeFox-A14-joan
-          path: ~/android14/out/target/product/joan/*.zip
+          name: OrangeFox-${{ env.DEVICE }}
+          path: |
+            ~/android14/out/target/product/${{ env.DEVICE }}/*.zip
+            ~/android14/out/target/product/${{ env.DEVICE }}/*.sha256
+
+      # -----------------------------
+      # Create GitHub Release
+      # -----------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: OrangeFox ${{ env.DEVICE }} Build ${{ github.run_number }}
+          files: |
+            ~/android14/out/target/product/${{ env.DEVICE }}/*.zip
+            ~/android14/out/target/product/${{ env.DEVICE }}/*.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
