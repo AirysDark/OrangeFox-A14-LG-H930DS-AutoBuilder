@@ -1,11 +1,11 @@
 # ==============================================
-# OrangeFox Android 14 Bootstrap v12
+# OrangeFox Android 14 Bootstrap v13
 # ==============================================
 
 $RepoOwner  = "AirysDark"
 $RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version    = "12.0.0"
+$Version    = "13.0.0"
 
 # ------------------------------------------------
 # ADMIN CHECK (NO AUTO ELEVATION)
@@ -66,33 +66,21 @@ swap=8GB
     wsl --shutdown
 }
 
-function Run-LocalDirect {
+function Invoke-WSLScript {
+    param ($ScriptUrl)
 
-    $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
-
-    if ($freeGB -lt 50) {
-        Write-Host "❌ Minimum 50GB required."
-        Pause
-        exit
-    }
-
-    Write-Host "Disk OK ($freeGB GB free)"
-    Ensure-WSL
-
-    $localScript = "$env:TEMP\of_build.sh"
+    $localScript = Join-Path $env:TEMP ([System.IO.Path]::GetFileName($ScriptUrl))
 
     try {
-        Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript -UseBasicParsing
+        Invoke-WebRequest $ScriptUrl -OutFile $localScript -UseBasicParsing
     }
     catch {
-        Write-Host "❌ Failed to download build script."
+        Write-Host "❌ Failed to download script."
         Pause
-        exit
+        return
     }
 
-    $drive = $localScript.Substring(0,1).ToLower()
-    $path  = $localScript.Substring(3) -replace '\\','/'
-    $wslPath = "/mnt/$drive/$path"
+    $wslPath = wsl wslpath "`"$localScript`""
 
     wsl bash -c "chmod +x $wslPath"
     wsl bash -c "$wslPath"
@@ -100,69 +88,28 @@ function Run-LocalDirect {
     Remove-Item $localScript -Force -ErrorAction SilentlyContinue
 }
 
+function Run-LocalDirect {
+
+    Ensure-WSL
+
+    Write-Host "Launching Direct Local Build..."
+    Invoke-WSLScript "$ScriptBase/build_orangefox_a14.sh"
+}
+
 function Run-LocalRunner {
 
-    $steps = @(
-        "Validating Disk Space",
-        "Preparing WSL Environment",
-        "Downloading Build Script",
-        "Executing Android Build"
-    )
+    $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
 
-    $total = $steps.Count
-    $current = 0
-    $localScript = "$env:TEMP\of_build.sh"
-
-    foreach ($step in $steps) {
-
-        $current++
-        $percent = [int](($current / $total) * 100)
-
-        Write-Progress -Activity "Local Runner Pipeline" `
-            -Status $step `
-            -PercentComplete $percent
-
-        switch ($step) {
-
-            "Validating Disk Space" {
-                $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
-                if ($freeGB -lt 50) {
-                    Write-Host "❌ Minimum 50GB required."
-                    Pause
-                    return
-                }
-            }
-
-            "Preparing WSL Environment" {
-                Ensure-WSL
-            }
-
-            "Downloading Build Script" {
-                try {
-                    Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript -UseBasicParsing
-                }
-                catch {
-                    Write-Host "❌ Failed to download build script."
-                    Pause
-                    return
-                }
-            }
-
-            "Executing Android Build" {
-                $drive = $localScript.Substring(0,1).ToLower()
-                $path  = $localScript.Substring(3) -replace '\\','/'
-                $wslPath = "/mnt/$drive/$path"
-
-                wsl bash -c "chmod +x $wslPath"
-                wsl bash -c "$wslPath"
-            }
-        }
-
-        Start-Sleep -Seconds 1
+    if ($freeGB -lt 50) {
+        Write-Host "❌ Minimum 50GB required for Runner mode."
+        Pause
+        return
     }
 
-    Write-Progress -Activity "Local Runner Pipeline" -Completed
-    Remove-Item $localScript -Force -ErrorAction SilentlyContinue
+    Ensure-WSL
+
+    Write-Host "Launching Local Runner Mode..."
+    Invoke-WSLScript "$ScriptBase/local_runner_a14.sh"
 }
 
 function Run-CloudBuild {
