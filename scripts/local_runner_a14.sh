@@ -28,19 +28,6 @@ echo " Root    : $ROOT"
 echo "==============================================="
 
 # --------------------------------
-# Disk Check
-# --------------------------------
-
-AVAILABLE=$(df --output=avail -BG "$HOME" | tail -1 | tr -dc '0-9')
-
-if [ "$AVAILABLE" -lt 50 ]; then
-    echo "❌ Minimum 50GB required."
-    exit 1
-fi
-
-echo "Disk OK (${AVAILABLE}GB available)"
-
-# --------------------------------
 # Initialize Repo
 # --------------------------------
 
