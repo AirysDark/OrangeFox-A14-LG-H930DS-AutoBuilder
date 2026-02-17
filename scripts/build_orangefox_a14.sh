@@ -1,128 +1,116 @@
 #!/bin/bash
 
 # ==========================================
-# OrangeFox Android 14 Fully Automatic Builder
+# OrangeFox Android 14 ELITE Builder v2
 # LG V30 H930DS (joan)
 # ==========================================
 
 set -e
+trap 'echo "❌ Build failed. See build.log"; exit 1' ERR
 
 ROOT=$HOME/android14
+DEVICE="joan"
 THREADS=$(nproc)
 LOGFILE=$ROOT/build.log
+VERSION="A14-$(date +%Y.%m.%d)-$(git rev-parse --short HEAD 2>/dev/null || echo initial)"
+
+mkdir -p "$ROOT"
+cd "$ROOT"
+
+exec > >(tee -a "$LOGFILE") 2>&1
 
 echo "==============================================="
-echo " OrangeFox Android 14 Automatic Builder"
-echo " LG V30 H930DS (joan)"
+echo " OrangeFox Android 14 ELITE Builder"
+echo " Device: $DEVICE"
+echo " Threads: $THREADS"
 echo "==============================================="
 
 # --------------------------------
-# Pre-flight checks
+# Disk Space Check
 # --------------------------------
 
-echo "=== Checking Disk Space ==="
-AVAILABLE=$(df --output=avail -BG "$HOME" | tail -1 | tr -dc '0-9')
+AVAILABLE=$(df --output=avail -BG "$ROOT" | tail -1 | tr -dc '0-9')
 
-if [ "$AVAILABLE" -lt 80 ]; then
-    echo "❌ ERROR: At least 80GB free space required."
+if [ "$AVAILABLE" -lt 100 ]; then
+    echo "❌ Minimum 100GB free space required."
     exit 1
 fi
 
-echo "Disk space OK (${AVAILABLE}GB available)"
-
-echo "=== Detecting CPU Threads ==="
-echo "Using $THREADS threads"
+echo "Disk OK (${AVAILABLE}GB available)"
 
 # --------------------------------
-# Ensure Git Identity
+# Git Identity
 # --------------------------------
 
-echo "=== Setting Git Identity ==="
 git config --global user.name "Android Builder"
 git config --global user.email "builder@local"
 
 # --------------------------------
-# Install Dependencies
+# Dependencies
 # --------------------------------
 
-echo "=== Installing Dependencies ==="
+echo "Installing dependencies..."
 sudo dpkg --add-architecture i386
 sudo apt update
 
 sudo apt install -y \
     bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
     git gnupg gperf imagemagick lib32z1-dev liblz4-tool \
-    libncurses5-dev libncurses-dev libsdl1.2-dev \
-    libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
-    schedtool squashfs-tools xsltproc zip zlib1g-dev \
+    libncurses5-dev libssl-dev libxml2-utils lzop \
+    pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
     openjdk-11-jdk python3
 
 # --------------------------------
-# Setup repo tool
+# Setup repo
 # --------------------------------
 
-echo "=== Setting up repo tool ==="
 mkdir -p ~/bin
-curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-chmod a+x ~/bin/repo
+if [ ! -f ~/bin/repo ]; then
+    curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+    chmod a+x ~/bin/repo
+fi
+
 export PATH=~/bin:$PATH
 
 # --------------------------------
-# Prepare Build Directory
-# --------------------------------
-
-echo "=== Creating Build Directory ==="
-mkdir -p "$ROOT"
-cd "$ROOT"
-
-# --------------------------------
-# Initialize LineageOS 21
+# Initialize Android Base
 # --------------------------------
 
 if [ ! -d ".repo" ]; then
-    echo "=== Initializing LineageOS 21 (Android 14) ==="
-    repo init -u https://github.com/LineageOS/android.git -b lineage-21.0
+    echo "Initializing LineageOS 21..."
+    repo init -u https://github.com/LineageOS/android.git -b lineage-21.0 --depth=1
 fi
 
 # --------------------------------
-# Sync Source
+# Sync (Optimized)
 # --------------------------------
 
-echo "=== Syncing Source ==="
-repo sync -j"$THREADS" --force-sync --no-clone-bundle --no-tags
+echo "Syncing source..."
+repo sync -c --optimized-fetch --prune -j"$THREADS"
 
 # --------------------------------
 # Inject OrangeFox
 # --------------------------------
 
-echo "=== Injecting OrangeFox fox_14.1 ==="
-rm -rf bootable/recovery
+if [ -d "bootable/recovery" ]; then
+    rm -rf bootable/recovery
+fi
+
 git clone -b fox_14.1 https://gitlab.com/OrangeFox/bootable/Recovery.git bootable/recovery
 
 # --------------------------------
-# Clone Device Tree
+# Device / Kernel / Vendor
 # --------------------------------
 
-if [ ! -d "device/lge/joan" ]; then
-    echo "=== Cloning Device Tree ==="
-    git clone https://github.com/LineageOS/android_device_lge_joan.git device/lge/joan
+if [ ! -d "device/lge/$DEVICE" ]; then
+    git clone https://github.com/LineageOS/android_device_lge_joan.git device/lge/$DEVICE
 fi
 
-# --------------------------------
-# Clone Kernel
-# --------------------------------
-
 if [ ! -d "kernel/lge/msm8998" ]; then
-    echo "=== Cloning Kernel ==="
     git clone https://github.com/LineageOS/android_kernel_lge_msm8998.git kernel/lge/msm8998
 fi
 
-# --------------------------------
-# Clone Vendor
-# --------------------------------
-
 if [ ! -d "vendor/lge" ]; then
-    echo "=== Cloning Vendor Blobs ==="
     git clone https://github.com/TheMuppets/proprietary_vendor_lge.git vendor/lge
 fi
 
@@ -130,26 +118,49 @@ fi
 # Enable ccache
 # --------------------------------
 
-echo "=== Enabling ccache ==="
 export USE_CCACHE=1
-ccache -M 30G
+ccache -M 40G
 
 # --------------------------------
-# Start Build
+# Build
 # --------------------------------
 
-echo "=== Starting Build ==="
 source build/envsetup.sh
-lunch lineage_joan-eng
+lunch lineage_${DEVICE}-eng
 
-echo "=== Building Recovery (logging to build.log) ==="
-mka recoveryimage -j"$THREADS" 2>&1 | tee "$LOGFILE"
+echo "Building recovery..."
+mka recoveryimage -j"$THREADS"
+
+# --------------------------------
+# Package
+# --------------------------------
+
+OUTDIR=$ROOT/out/target/product/$DEVICE
+ZIPNAME="OrangeFox-${DEVICE}-${VERSION}.zip"
+
+cd "$OUTDIR"
+
+echo "Creating package..."
+zip "$ZIPNAME" recovery.img
+
+echo "Generating checksum..."
+sha256sum "$ZIPNAME" > "$ZIPNAME.sha256"
+
+echo "Embedding build metadata..."
+echo "Build Version: $VERSION" > build_info.txt
+echo "Build Date: $(date)" >> build_info.txt
+echo "Device: $DEVICE" >> build_info.txt
+
+zip -u "$ZIPNAME" build_info.txt
+
+# --------------------------------
+# Complete
+# --------------------------------
 
 echo ""
 echo "==============================================="
 echo " BUILD COMPLETE"
-echo " Recovery Image:"
-echo " $ROOT/out/target/product/joan/recovery.img"
-echo " Log File:"
-echo " $LOGFILE"
+echo " Artifact: $OUTDIR/$ZIPNAME"
+echo " Checksum: $OUTDIR/$ZIPNAME.sha256"
+echo " Log File: $LOGFILE"
 echo "==============================================="
