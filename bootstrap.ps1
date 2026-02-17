@@ -1,11 +1,11 @@
 # ==============================================
-# OrangeFox Android 14 Bootstrap v16
+# OrangeFox Android 14 Bootstrap v18
 # ==============================================
 
 $RepoOwner  = "AirysDark"
 $RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version    = "16.0.0"
+$Version    = "18.0.0"
 
 # ------------------------------------------------
 # ADMIN CHECK
@@ -60,44 +60,7 @@ swap=8GB
 }
 
 # ------------------------------------------------
-# SCRIPT EXECUTION HELPER
-# ------------------------------------------------
-
-function Invoke-WSLScript {
-    param (
-        [string]$ScriptUrl,
-        [string]$LocalName
-    )
-
-    $localScript = Join-Path $env:TEMP $LocalName
-
-    if (Test-Path $localScript) {
-        Remove-Item $localScript -Force
-    }
-
-    try {
-        Invoke-WebRequest $ScriptUrl -OutFile $localScript -UseBasicParsing
-    }
-    catch {
-        Write-Host "❌ Failed to download script."
-        Pause
-        return
-    }
-
-    $wslPath = wsl wslpath "`"$localScript`""
-
-    Write-Host ""
-    Write-Host "Executing inside WSL: $LocalName"
-    Write-Host ""
-
-    wsl bash -c "chmod +x $wslPath"
-    wsl bash -c "$wslPath"
-
-    Remove-Item $localScript -Force -ErrorAction SilentlyContinue
-}
-
-# ------------------------------------------------
-# MODE 1 – FULL INSTALL + BUILD
+# MODE 1 – INSTALL WSL + DIRECT BUILD
 # ------------------------------------------------
 
 function Run-LocalInstallBuild {
@@ -107,31 +70,20 @@ function Run-LocalInstallBuild {
 
     Install-And-Configure-WSL
 
-    Invoke-WSLScript `
-        "$ScriptBase/build_orangefox_a14.sh" `
-        "direct_build_a14.sh"
+    wsl bash -c "cd ~ && curl -s $ScriptBase/build_orangefox_a14.sh -o direct_build_a14.sh && chmod +x direct_build_a14.sh && ./direct_build_a14.sh"
 }
 
 # ------------------------------------------------
-# MODE 2 – RUNNER MODE (NO WSL INSTALL)
+# MODE 2 – PURE RUNNER (NO CHECKS)
 # ------------------------------------------------
 
 function Run-LocalRunner {
 
     Clear-Host
-    Write-Host "=== MODE 2: LOCAL RUNNER PIPELINE ==="
+    Write-Host "=== MODE 2: LOCAL RUNNER ==="
 
-    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
-        Write-Host ""
-        Write-Host "❌ WSL not installed."
-        Write-Host "Run Option 1 first."
-        Pause
-        return
-    }
-
-    Invoke-WSLScript `
-        "$ScriptBase/local_runner_a14.sh" `
-        "runner_build_a14.sh"
+    # Just run it. No checks. No install. No blocking.
+    wsl bash -c "cd ~ && curl -s $ScriptBase/local_runner_a14.sh -o local_runner_a14.sh && chmod +x local_runner_a14.sh && ./local_runner_a14.sh"
 }
 
 # ------------------------------------------------
@@ -178,7 +130,7 @@ Write-Host "==============================================="
 Write-Host ""
 
 Write-Host "1) Install WSL + Local Direct Build"
-Write-Host "2) Local Runner Mode (WSL already installed)"
+Write-Host "2) Local Runner (Just Run .sh)"
 Write-Host "3) Cloud GitHub Build"
 Write-Host ""
 $choice = Read-Host "Select option"
