@@ -1,15 +1,40 @@
 # ==============================================
-# OrangeFox Android 14 Bootstrap v6 (Stable)
+# OrangeFox Android 14 Bootstrap v7 (Logging)
 # ==============================================
 
 $RepoOwner  = "AirysDark"
 $RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version    = "6.0.0"
+$Version    = "7.0.0"
 
-# --------------------------------------------
-# Check Admin FIRST — do nothing else before
-# --------------------------------------------
+$ErrorLog = "C:\orangefox_error.log"
+
+# ------------------------------------------------
+# Error Logging System
+# ------------------------------------------------
+
+function Write-ErrorLog {
+    param ($Message)
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $ErrorLog -Value "[$timestamp] $Message"
+}
+
+# Catch all terminating errors
+$ErrorActionPreference = "Stop"
+
+trap {
+    Write-ErrorLog "UNHANDLED ERROR: $($_.Exception.Message)"
+    Write-Host ""
+    Write-Host "❌ A fatal error occurred."
+    Write-Host "See log file: $ErrorLog"
+    Pause
+    exit 1
+}
+
+# ------------------------------------------------
+# Elevation Check
+# ------------------------------------------------
 
 $isAdmin = ([Security.Principal.WindowsPrincipal] `
     [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -18,20 +43,25 @@ $isAdmin = ([Security.Principal.WindowsPrincipal] `
 if (-not $isAdmin) {
 
     Write-Host ""
-    Write-Host "This installer requires Administrator privileges."
-    Write-Host "Relaunching as Administrator..."
+    Write-Host "Administrator privileges required."
+    Write-Host "Relaunching..."
     Write-Host ""
 
-    Start-Process -FilePath "powershell.exe" `
-        -Verb RunAs `
-        -ArgumentList "-NoExit -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/bootstrap.ps1 | iex`""
+    try {
+        Start-Process -FilePath "powershell.exe" `
+            -Verb RunAs `
+            -ArgumentList "-NoExit -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/bootstrap.ps1 | iex`""
+    }
+    catch {
+        Write-ErrorLog "Failed to elevate: $($_.Exception.Message)"
+    }
 
     exit
 }
 
-# --------------------------------------------
-# From here down, we are guaranteed Admin
-# --------------------------------------------
+# ------------------------------------------------
+# Admin Section Starts Here
+# ------------------------------------------------
 
 Clear-Host
 Write-Host "==============================================="
@@ -50,67 +80,69 @@ $choice = Read-Host "Select option"
 
 if ($choice -eq "1") {
 
-    $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
+    try {
+        $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
 
-    if ($freeGB -lt 120) {
-        Write-Host ""
-        Write-Host "❌ Minimum 120GB free space required for LOCAL build."
-        Pause
-        exit
-    }
+        if ($freeGB -lt 120) {
+            Write-ErrorLog "Insufficient disk space: $freeGB GB"
+            Write-Host "❌ Minimum 120GB required."
+            Pause
+            exit
+        }
 
-    Write-Host "Disk OK ($freeGB GB free)"
-    Write-Host ""
+        Write-Host "Disk OK ($freeGB GB free)"
 
-    Write-Host "Enabling WSL features..."
+        Write-Host "Enabling WSL features..."
+        dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+        dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
 
-    dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
-    dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+        if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
+            Write-Host "Installing WSL + Ubuntu..."
+            wsl --install -d Ubuntu
+            Write-ErrorLog "WSL installed — reboot required"
+            Write-Host "Reboot required. Restart Windows."
+            Pause
+            exit
+        }
 
-    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
-        Write-Host "Installing WSL + Ubuntu..."
-        wsl --install -d Ubuntu
-        Write-Host ""
-        Write-Host "Reboot required. Restart Windows and re-run installer."
-        Pause
-        exit
-    }
+        wsl --set-default-version 2
 
-    wsl --set-default-version 2
+        $distros = wsl -l -q
+        if ($distros -notmatch "Ubuntu") {
+            wsl --install -d Ubuntu
+            Write-ErrorLog "Ubuntu installed — reboot required"
+            Write-Host "Reboot required. Restart Windows."
+            Pause
+            exit
+        }
 
-    $distros = wsl -l -q
-    if ($distros -notmatch "Ubuntu") {
-        wsl --install -d Ubuntu
-        Write-Host "Reboot required. Restart Windows and re-run."
-        Pause
-        exit
-    }
-
-    # Configure WSL memory
-    @"
+        @"
 [wsl2]
 memory=6GB
 processors=4
 swap=8GB
 "@ | Out-File "$env:USERPROFILE\.wslconfig" -Encoding ASCII -Force
 
-    wsl --shutdown
+        wsl --shutdown
 
-    Write-Host "WSL ready."
-    Write-Host ""
+        Write-Host "WSL ready."
 
-    # Download build script
-    $localScript = "$env:TEMP\of_build.sh"
-    Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript
+        $localScript = "$env:TEMP\of_build.sh"
+        Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript
 
-    $drive = $localScript.Substring(0,1).ToLower()
-    $path  = $localScript.Substring(3) -replace '\\','/'
-    $wslPath = "/mnt/$drive/$path"
+        $drive = $localScript.Substring(0,1).ToLower()
+        $path  = $localScript.Substring(3) -replace '\\','/'
+        $wslPath = "/mnt/$drive/$path"
 
-    wsl bash -c "chmod +x $wslPath"
-    wsl bash -c "$wslPath"
+        wsl bash -c "chmod +x $wslPath"
+        wsl bash -c "$wslPath"
 
-    Remove-Item $localScript -Force
+        Remove-Item $localScript -Force
+    }
+    catch {
+        Write-ErrorLog "Local build error: $($_.Exception.Message)"
+        throw
+    }
 }
 
 # ============================================================
@@ -119,34 +151,32 @@ swap=8GB
 
 elseif ($choice -eq "2") {
 
-    Write-Host ""
-    Write-Host "Triggering GitHub Cloud Build..."
-    Write-Host ""
-
-    $workflowUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/actions/workflows/build.yml/dispatches"
-
-    $token = Read-Host "Enter GitHub Personal Access Token" -AsSecureString
-    $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($token)
-    )
-
-    $headers = @{
-        Authorization = "token $plain"
-        Accept = "application/vnd.github+json"
-    }
-
-    $body = @{ ref = "main" } | ConvertTo-Json
-
     try {
+        $workflowUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/actions/workflows/build.yml/dispatches"
+
+        $token = Read-Host "Enter GitHub Personal Access Token" -AsSecureString
+        $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+            [Runtime.InteropServices.Marshal]::SecureStringToBSTR($token)
+        )
+
+        $headers = @{
+            Authorization = "token $plain"
+            Accept = "application/vnd.github+json"
+        }
+
+        $body = @{ ref = "main" } | ConvertTo-Json
+
         Invoke-RestMethod -Uri $workflowUrl -Method POST -Headers $headers -Body $body
         Write-Host "Cloud build triggered successfully."
     }
     catch {
-        Write-Host "❌ Failed to trigger cloud build."
+        Write-ErrorLog "Cloud trigger failed: $($_.Exception.Message)"
+        throw
     }
 }
 
 else {
+    Write-ErrorLog "Invalid menu selection"
     Write-Host "Invalid selection."
 }
 
