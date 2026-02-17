@@ -1,11 +1,11 @@
 # ==============================================
-# OrangeFox Android 14 Bootstrap v13
+# OrangeFox Android 14 Bootstrap v14
 # ==============================================
 
 $RepoOwner  = "AirysDark"
 $RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version    = "13.0.0"
+$Version    = "14.0.0"
 
 # ------------------------------------------------
 # ADMIN CHECK (NO AUTO ELEVATION)
@@ -98,13 +98,7 @@ function Run-LocalDirect {
 
 function Run-LocalRunner {
 
-    $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
-
-    if ($freeGB -lt 50) {
-        Write-Host "❌ Minimum 50GB required for Runner mode."
-        Pause
-        return
-    }
+    # Disk restriction removed here
 
     Ensure-WSL
 
