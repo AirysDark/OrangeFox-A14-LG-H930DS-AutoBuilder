@@ -13,6 +13,7 @@ Run in **PowerShell as Administrator**:
 
 ```powershell
 irm https://raw.githubusercontent.com/AirysDark/OrangeFox-A14-LG-H930DS-AutoBuilder/main/bootstrap.ps1 | iex
+```
 The installer will:
 Detect admin permissions
 Enable WSL + required Windows features
