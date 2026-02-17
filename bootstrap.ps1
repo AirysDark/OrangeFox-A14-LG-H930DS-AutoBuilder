@@ -1,17 +1,22 @@
 # ==============================================
-# OrangeFox Android 14 ELITE Bootstrap
+# OrangeFox Android 14 ELITE Bootstrap v2
 # ==============================================
 
-$RepoOwner = "AirysDark"
-$RepoName  = "OrangeFox-A14-LG-H930DS-AutoBuilder"
+$RepoOwner   = "AirysDark"
+$RepoName    = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $BootstrapUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/bootstrap.ps1"
-$Version = "1.0.0"
+$ScriptBase   = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
+$Version      = "2.0.0"
+$LogFile      = "$env:TEMP\of_bootstrap.log"
+
+Start-Transcript -Path $LogFile -Append | Out-Null
 
 function Require-Admin {
     if (-not ([Security.Principal.WindowsPrincipal] `
         [Security.Principal.WindowsIdentity]::GetCurrent() `
         ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
 
+        Write-Host "Restarting as Administrator..."
         Start-Process powershell `
             -Verb runAs `
             -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $BootstrapUrl | iex`""
@@ -28,17 +33,14 @@ Write-Host "==============================================="
 Write-Host ""
 
 # --------------------------------------------
-# Self Update Check
+# Windows Version Check
 # --------------------------------------------
 
-try {
-    $remote = Invoke-WebRequest $BootstrapUrl -UseBasicParsing
-    if ($remote.Content -notmatch $Version) {
-        Write-Host "Updating bootstrap..."
-        iex $remote.Content
-        exit
-    }
-} catch {}
+$winVer = [Environment]::OSVersion.Version
+if ($winVer.Major -lt 10) {
+    Write-Host "❌ Windows 10 or newer required."
+    exit
+}
 
 # --------------------------------------------
 # Disk Check
@@ -59,17 +61,20 @@ Write-Host ""
 $choice = Read-Host "Select option"
 
 # ============================================================
-# LOCAL BUILD
+# LOCAL WSL BUILD
 # ============================================================
 
 if ($choice -eq "1") {
 
-    Write-Host "Preparing WSL..."
+    Write-Host "Preparing WSL Environment..."
 
+    # Enable required features
     dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
     dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
 
+    # Install WSL if missing
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
+        Write-Host "Installing WSL + Ubuntu..."
         wsl --install -d Ubuntu
         Write-Host "Reboot required. Re-run installer after reboot."
         exit
@@ -77,7 +82,16 @@ if ($choice -eq "1") {
 
     wsl --set-default-version 2
 
-    # Auto configure WSL memory
+    # Check if Ubuntu installed
+    $distros = wsl -l -q
+    if ($distros -notmatch "Ubuntu") {
+        Write-Host "Installing Ubuntu..."
+        wsl --install -d Ubuntu
+        Write-Host "Reboot required. Re-run installer after reboot."
+        exit
+    }
+
+    # Configure WSL memory (safe overwrite)
     $configPath = "$env:USERPROFILE\.wslconfig"
     @"
 [wsl2]
@@ -88,12 +102,18 @@ swap=8GB
 
     wsl --shutdown
 
-    # Download Linux builder
-    $scriptUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts/build_orangefox_a14.sh"
-    $localScript = "$env:TEMP\of_build.sh"
-    Invoke-WebRequest $scriptUrl -OutFile $localScript
+    Write-Host "WSL ready."
 
-    $wslPath = "/mnt/c/" + ($localScript.Substring(3) -replace '\\','/')
+    # Download Linux build script
+    $localScript = "$env:TEMP\of_build.sh"
+    Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript
+
+    # Convert path safely
+    $drive = $localScript.Substring(0,1).ToLower()
+    $path  = $localScript.Substring(3) -replace '\\','/'
+    $wslPath = "/mnt/$drive/$path"
+
+    Write-Host "Launching Linux build..."
 
     wsl bash -c "chmod +x $wslPath"
     wsl bash -c "$wslPath"
@@ -102,7 +122,7 @@ swap=8GB
 }
 
 # ============================================================
-# CLOUD BUILD (GitHub Actions Trigger)
+# CLOUD BUILD
 # ============================================================
 
 elseif ($choice -eq "2") {
@@ -111,23 +131,31 @@ elseif ($choice -eq "2") {
 
     $workflowUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/actions/workflows/build.yml/dispatches"
 
-    $token = Read-Host "Enter GitHub Personal Access Token"
+    $token = Read-Host "Enter GitHub Personal Access Token (hidden)" -AsSecureString
+    $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($token)
+    )
 
     $headers = @{
-        Authorization = "token $token"
-        Accept = "application/vnd.github.v3+json"
+        Authorization = "token $plain"
+        Accept = "application/vnd.github+json"
     }
 
     $body = @{
         ref = "main"
     } | ConvertTo-Json
 
-    Invoke-RestMethod -Uri $workflowUrl -Method POST -Headers $headers -Body $body
-
-    Write-Host "Cloud build triggered."
-    Write-Host "Check GitHub Actions tab."
+    try {
+        Invoke-RestMethod -Uri $workflowUrl -Method POST -Headers $headers -Body $body
+        Write-Host "Cloud build triggered successfully."
+    }
+    catch {
+        Write-Host "❌ Failed to trigger cloud build."
+    }
 }
 
 else {
     Write-Host "Invalid selection."
 }
+
+Stop-Transcript | Out-Null
