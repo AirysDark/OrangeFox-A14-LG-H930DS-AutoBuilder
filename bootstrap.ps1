@@ -1,11 +1,37 @@
 # ==============================================
-# OrangeFox Android 14 Bootstrap v18
+# OrangeFox Android 14 Bootstrap v19
+# Self-Cleaning Edition
 # ==============================================
 
 $RepoOwner  = "AirysDark"
 $RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version    = "18.0.0"
+$Version    = "19.0.0"
+
+# ------------------------------------------------
+# SILENT SELF CLEAN (RUNS BEFORE ANY UI)
+# ------------------------------------------------
+
+try {
+
+    $temp = $env:TEMP
+
+    # Remove previous bootstrap copies
+    Get-ChildItem $temp -Filter "of_bootstrap*.ps1" -ErrorAction SilentlyContinue | 
+        Remove-Item -Force -ErrorAction SilentlyContinue
+
+    # Remove downloaded build helpers
+    Get-ChildItem $temp -Filter "*_a14.sh" -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+
+    # Remove legacy build temp names
+    Remove-Item "$temp\direct_build_a14.sh" -Force -ErrorAction SilentlyContinue
+    Remove-Item "$temp\local_runner_a14.sh" -Force -ErrorAction SilentlyContinue
+
+}
+catch {
+    # Silent fail – no output
+}
 
 # ------------------------------------------------
 # ADMIN CHECK
@@ -13,9 +39,10 @@ $Version    = "18.0.0"
 
 $isAdmin = ([Security.Principal.WindowsPrincipal] `
     [Security.Principal.WindowsIdentity]::GetCurrent()
-    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
+
     Write-Host ""
     Write-Host "==============================================="
     Write-Host " ADMINISTRATOR PRIVILEGES REQUIRED"
@@ -28,7 +55,7 @@ if (-not $isAdmin) {
 }
 
 # ------------------------------------------------
-# WSL INSTALLER (ONLY USED BY OPTION 1)
+# WSL INSTALLER (ONLY OPTION 1)
 # ------------------------------------------------
 
 function Install-And-Configure-WSL {
@@ -82,7 +109,6 @@ function Run-LocalRunner {
     Clear-Host
     Write-Host "=== MODE 2: LOCAL RUNNER ==="
 
-    # Just run it. No checks. No install. No blocking.
     wsl bash -c "cd ~ && curl -s $ScriptBase/local_runner_a14.sh -o local_runner_a14.sh && chmod +x local_runner_a14.sh && ./local_runner_a14.sh"
 }
 
