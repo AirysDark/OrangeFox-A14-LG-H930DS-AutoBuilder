@@ -1,11 +1,11 @@
 # ==============================================
-# OrangeFox Android 14 Bootstrap v9 (Clean)
+# OrangeFox Android 14 Bootstrap v10
 # ==============================================
 
 $RepoOwner  = "AirysDark"
 $RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version    = "9.0.0"
+$Version    = "10.0.0"
 
 # ------------------------------------------------
 # ADMIN CHECK (NO AUTO ELEVATION)
@@ -26,8 +26,6 @@ if (-not $isAdmin) {
     Write-Host "Right-click PowerShell and choose:"
     Write-Host "'Run as Administrator'"
     Write-Host ""
-    Write-Host "Then run the installer again."
-    Write-Host ""
     Pause
     exit
 }
@@ -43,7 +41,7 @@ Write-Host "==============================================="
 Write-Host ""
 
 Write-Host "1) Local WSL Build"
-Write-Host "2) Cloud GitHub Build"
+Write-Host "2) Cloud GitHub Build (Live Progress)"
 Write-Host ""
 $choice = Read-Host "Select option"
 
@@ -115,7 +113,7 @@ swap=8GB
 }
 
 # ============================================================
-# CLOUD BUILD
+# CLOUD BUILD (LIVE PROGRESS)
 # ============================================================
 
 elseif ($choice -eq "2") {
@@ -125,6 +123,7 @@ elseif ($choice -eq "2") {
     Write-Host ""
 
     $workflowUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/actions/workflows/build.yml/dispatches"
+    $runsUrl     = "https://api.github.com/repos/$RepoOwner/$RepoName/actions/runs"
 
     $token = Read-Host "Enter GitHub Personal Access Token" -AsSecureString
     $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
@@ -133,17 +132,75 @@ elseif ($choice -eq "2") {
 
     $headers = @{
         Authorization = "token $plain"
-        Accept = "application/vnd.github+json"
+        Accept        = "application/vnd.github+json"
     }
 
     $body = @{ ref = "main" } | ConvertTo-Json
 
     try {
+        # Trigger workflow
         Invoke-RestMethod -Uri $workflowUrl -Method POST -Headers $headers -Body $body
-        Write-Host "Cloud build triggered successfully."
+        Write-Host "Build triggered. Waiting for job..."
+
+        Start-Sleep -Seconds 5
+
+        # Get latest run
+        $run = (Invoke-RestMethod -Uri $runsUrl -Headers $headers).workflow_runs |
+               Sort-Object created_at -Descending |
+               Select-Object -First 1
+
+        if (-not $run) {
+            Write-Host "Unable to locate workflow run."
+            Pause
+            exit
+        }
+
+        $runId = $run.id
+        $progress = 5
+
+        while ($true) {
+
+            $runStatus = Invoke-RestMethod -Uri "$runsUrl/$runId" -Headers $headers
+
+            switch ($runStatus.status) {
+
+                "queued" {
+                    $progress = 10
+                    Write-Progress -Activity "Cloud Build" `
+                        -Status "Queued..." `
+                        -PercentComplete $progress
+                }
+
+                "in_progress" {
+                    if ($progress -lt 90) { $progress += 3 }
+                    Write-Progress -Activity "Cloud Build Running" `
+                        -Status "Building on GitHub..." `
+                        -PercentComplete $progress
+                }
+
+                "completed" {
+
+                    Write-Progress -Activity "Cloud Build Completed" `
+                        -Status $runStatus.conclusion `
+                        -PercentComplete 100
+
+                    break
+                }
+            }
+
+            Start-Sleep -Seconds 8
+        }
+
+        Write-Host ""
+        Write-Host "Build Result: $($runStatus.conclusion)"
+
+        if ($runStatus.conclusion -eq "success") {
+            Write-Host "Opening Releases page..."
+            Start-Process "https://github.com/$RepoOwner/$RepoName/releases"
+        }
     }
     catch {
-        Write-Host "❌ Failed to trigger cloud build."
+        Write-Host "❌ Failed to trigger or track cloud build."
     }
 }
 
