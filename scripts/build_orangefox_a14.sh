@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-# OrangeFox Android 14 ELITE Builder v3
+# OrangeFox Android 14 ELITE Builder v4
 # LG V30 H930DS (joan)
 # ==========================================
 
@@ -21,20 +21,23 @@ cd "$ROOT"
 exec > >(tee -a "$LOGFILE") 2>&1
 
 echo "==============================================="
-echo " OrangeFox Android 14 ELITE Builder v3"
+echo " OrangeFox Android 14 ELITE Builder v4"
 echo " Device  : $DEVICE"
 echo " Threads : $THREADS"
 echo " Root    : $ROOT"
 echo "==============================================="
 
 # --------------------------------
-# Disk Space Check
+# Disk Space Check (100GB Minimum)
 # --------------------------------
 
 AVAILABLE=$(df --output=avail -BG "$HOME" | tail -1 | tr -dc '0-9')
 
-if [ "$AVAILABLE" -lt 50 ]; then
-    echo "❌ Minimum 50GB free space required."
+if [ "$AVAILABLE" -lt 100 ]; then
+    echo ""
+    echo "❌ ERROR: Minimum 100GB free space required."
+    echo "   Available: ${AVAILABLE}GB"
+    echo ""
     exit 1
 fi
 
