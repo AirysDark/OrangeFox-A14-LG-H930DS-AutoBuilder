@@ -1,5 +1,5 @@
 # ==============================================
-# OrangeFox Bootstrap Loader
+# OrangeFox Bootstrap Loader v2
 # ==============================================
 
 $RepoOwner = "AirysDark"
@@ -30,21 +30,41 @@ if (-not $isAdmin) {
 }
 
 # ------------------------------------------------
-# CLEAN OLD TEMP
+# SILENT TEMP CLEANUP
 # ------------------------------------------------
 
 try {
-    Remove-Item $TempBoot -Force -ErrorAction SilentlyContinue
-} catch {}
+
+    $temp = $env:TEMP
+
+    # Remove old boot loader copy
+    if (Test-Path $TempBoot) {
+        Remove-Item $TempBoot -Force -ErrorAction SilentlyContinue
+    }
+
+    # Remove previous OrangeFox temp project folders
+    Get-ChildItem $temp -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "OrangeFox*" -or $_.Name -like "*A14*" } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    # Remove previous temp shell scripts
+    Get-ChildItem $temp -Filter "*_a14.sh" -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+
+}
+catch {
+    # Silent cleanup failure allowed
+}
 
 # ------------------------------------------------
-# DOWNLOAD BOOT CORE
+# DOWNLOAD FRESH BOOT CORE
 # ------------------------------------------------
 
 try {
     Invoke-WebRequest $BootUrl -OutFile $TempBoot -UseBasicParsing
 }
 catch {
+    Write-Host ""
     Write-Host "❌ Failed to download boot core."
     Pause
     exit
@@ -54,4 +74,6 @@ catch {
 # EXECUTE BOOT CORE
 # ------------------------------------------------
 
-powershell -ExecutionPolicy Bypass -File $TempBoot
+Start-Process powershell `
+    -ArgumentList "-ExecutionPolicy Bypass -File `"$TempBoot`"" `
+    -Wait
