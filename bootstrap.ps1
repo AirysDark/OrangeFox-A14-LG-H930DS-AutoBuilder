@@ -55,9 +55,9 @@ if ($choice -eq "1") {
 
     $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
 
-    if ($freeGB -lt 120) {
+    if ($freeGB -lt 50) {
         Write-Host ""
-        Write-Host "❌ Minimum 120GB required for LOCAL build."
+        Write-Host "❌ Minimum 50GB required for LOCAL build."
         Pause
         exit
     }
