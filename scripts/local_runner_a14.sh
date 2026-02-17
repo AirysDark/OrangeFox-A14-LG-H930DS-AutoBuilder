@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # ==========================================
-# OrangeFox Android 14 LOCAL RUNNER MODE
+# OrangeFox Android 14 LOCAL BUILD
 # LG V30 H930DS (joan)
 # ==========================================
 
 set -euo pipefail
-trap 'echo ""; echo "❌ Pipeline failed."; exit 1' ERR
+trap 'echo ""; echo "❌ Build failed. See local_runner.log"; exit 1' ERR
 
 ROOT="$HOME/android14"
 DEVICE="joan"
@@ -20,30 +20,16 @@ cd "$ROOT"
 
 exec > >(tee -a "$LOGFILE") 2>&1
 
-TOTAL_STEPS=6
-CURRENT_STEP=0
-
-progress() {
-    CURRENT_STEP=$((CURRENT_STEP + 1))
-    PERCENT=$((CURRENT_STEP * 100 / TOTAL_STEPS))
-    echo ""
-    echo "-----------------------------------------------"
-    echo "STEP $CURRENT_STEP/$TOTAL_STEPS — $1"
-    echo "Progress: ${PERCENT}%"
-    echo "-----------------------------------------------"
-}
-
 echo "==============================================="
-echo " OrangeFox Android 14 LOCAL RUNNER"
+echo " OrangeFox Android 14 LOCAL BUILD"
 echo " Device  : $DEVICE"
 echo " Threads : $THREADS"
+echo " Root    : $ROOT"
 echo "==============================================="
 
 # --------------------------------
-# Step 1 — Disk Check
+# Disk Check
 # --------------------------------
-
-progress "Checking Disk Space"
 
 AVAILABLE=$(df --output=avail -BG "$HOME" | tail -1 | tr -dc '0-9')
 
@@ -55,47 +41,44 @@ fi
 echo "Disk OK (${AVAILABLE}GB available)"
 
 # --------------------------------
-# Step 2 — Initialize Repo
+# Initialize Repo
 # --------------------------------
 
-progress "Initializing Repo"
-
 if [ ! -d ".repo" ]; then
+    echo "Initializing LineageOS 21..."
     repo init -u https://github.com/LineageOS/android.git -b lineage-21.0 --depth=1
 fi
 
 # --------------------------------
-# Step 3 — Sync Source
+# Sync Source
 # --------------------------------
 
-progress "Syncing Source"
-
+echo "Syncing source..."
 repo sync -c --no-tags --prune --optimized-fetch -j"$THREADS"
 
 # --------------------------------
-# Step 4 — Inject OrangeFox
+# Inject OrangeFox
 # --------------------------------
 
-progress "Injecting OrangeFox"
-
+echo "Injecting OrangeFox..."
 rm -rf bootable/recovery
 git clone -b fox_14.1 https://gitlab.com/OrangeFox/bootable/Recovery.git bootable/recovery
 
 # --------------------------------
-# Step 5 — Device Trees
+# Device / Kernel / Vendor
 # --------------------------------
 
-progress "Cloning Device Trees"
+echo "Cloning device trees..."
 
 [ ! -d "device/lge/$DEVICE" ] && git clone https://github.com/LineageOS/android_device_lge_joan.git device/lge/$DEVICE
 [ ! -d "kernel/lge/msm8998" ] && git clone https://github.com/LineageOS/android_kernel_lge_msm8998.git kernel/lge/msm8998
 [ ! -d "vendor/lge" ] && git clone https://github.com/TheMuppets/proprietary_vendor_lge.git vendor/lge
 
 # --------------------------------
-# Step 6 — Build Recovery
+# Build
 # --------------------------------
 
-progress "Building Recovery"
+echo "Building recovery..."
 
 export USE_CCACHE=1
 ccache -M 30G
@@ -104,16 +87,26 @@ source build/envsetup.sh
 lunch lineage_${DEVICE}-eng
 mka recoveryimage -j"$THREADS"
 
+# --------------------------------
+# Package
+# --------------------------------
+
 OUTDIR="$ROOT/out/target/product/$DEVICE"
 ZIPNAME="OrangeFox-${DEVICE}-${VERSION}.zip"
 
 cd "$OUTDIR"
+
+if [ ! -f recovery.img ]; then
+    echo "❌ recovery.img not found!"
+    exit 1
+fi
+
 zip -9 "$ZIPNAME" recovery.img
 sha256sum "$ZIPNAME" > "$ZIPNAME.sha256"
 
 echo ""
 echo "==============================================="
-echo " LOCAL RUNNER BUILD COMPLETE"
+echo " BUILD COMPLETE"
 echo " Artifact : $OUTDIR/$ZIPNAME"
 echo " Checksum : $OUTDIR/$ZIPNAME.sha256"
 echo " Log File : $LOGFILE"
