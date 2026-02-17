@@ -1,11 +1,11 @@
 # ==============================================
-# OrangeFox Android 14 Bootstrap v11
+# OrangeFox Android 14 Bootstrap v12
 # ==============================================
 
 $RepoOwner  = "AirysDark"
 $RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version    = "11.0.0"
+$Version    = "12.0.0"
 
 # ------------------------------------------------
 # ADMIN CHECK (NO AUTO ELEVATION)
@@ -33,6 +33,8 @@ if (-not $isAdmin) {
 # ------------------------------------------------
 
 function Ensure-WSL {
+
+    Write-Host "Preparing WSL environment..."
 
     dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
     dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
@@ -78,7 +80,15 @@ function Run-LocalDirect {
     Ensure-WSL
 
     $localScript = "$env:TEMP\of_build.sh"
-    Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript
+
+    try {
+        Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript -UseBasicParsing
+    }
+    catch {
+        Write-Host "❌ Failed to download build script."
+        Pause
+        exit
+    }
 
     $drive = $localScript.Substring(0,1).ToLower()
     $path  = $localScript.Substring(3) -replace '\\','/'
@@ -87,7 +97,7 @@ function Run-LocalDirect {
     wsl bash -c "chmod +x $wslPath"
     wsl bash -c "$wslPath"
 
-    Remove-Item $localScript -Force
+    Remove-Item $localScript -Force -ErrorAction SilentlyContinue
 }
 
 function Run-LocalRunner {
@@ -96,12 +106,12 @@ function Run-LocalRunner {
         "Validating Disk Space",
         "Preparing WSL Environment",
         "Downloading Build Script",
-        "Executing Android Build",
-        "Finalizing"
+        "Executing Android Build"
     )
 
     $total = $steps.Count
     $current = 0
+    $localScript = "$env:TEMP\of_build.sh"
 
     foreach ($step in $steps) {
 
@@ -119,7 +129,7 @@ function Run-LocalRunner {
                 if ($freeGB -lt 50) {
                     Write-Host "❌ Minimum 50GB required."
                     Pause
-                    exit
+                    return
                 }
             }
 
@@ -128,14 +138,21 @@ function Run-LocalRunner {
             }
 
             "Downloading Build Script" {
-                $global:localScript = "$env:TEMP\of_build.sh"
-                Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript
+                try {
+                    Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript -UseBasicParsing
+                }
+                catch {
+                    Write-Host "❌ Failed to download build script."
+                    Pause
+                    return
+                }
             }
 
             "Executing Android Build" {
                 $drive = $localScript.Substring(0,1).ToLower()
                 $path  = $localScript.Substring(3) -replace '\\','/'
                 $wslPath = "/mnt/$drive/$path"
+
                 wsl bash -c "chmod +x $wslPath"
                 wsl bash -c "$wslPath"
             }
@@ -163,9 +180,14 @@ function Run-CloudBuild {
         Accept        = "application/vnd.github+json"
     }
 
-    $body = @{ ref = "main" } | ConvertTo-Json
-
-    Invoke-RestMethod -Uri $workflowUrl -Method POST -Headers $headers -Body $body
+    try {
+        Invoke-RestMethod -Uri $workflowUrl -Method POST -Headers $headers -Body (@{ ref = "main" } | ConvertTo-Json)
+    }
+    catch {
+        Write-Host "❌ Failed to trigger cloud build."
+        Pause
+        return
+    }
 
     Write-Host "Build triggered..."
     Start-Sleep -Seconds 5
