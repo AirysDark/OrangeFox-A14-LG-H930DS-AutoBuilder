@@ -1,11 +1,11 @@
 # ==============================================
-# OrangeFox Android 14 Bootstrap v15
+# OrangeFox Android 14 Bootstrap v16
 # ==============================================
 
 $RepoOwner  = "AirysDark"
 $RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version    = "15.0.0"
+$Version    = "16.0.0"
 
 # ------------------------------------------------
 # ADMIN CHECK
@@ -21,33 +21,47 @@ if (-not $isAdmin) {
     Write-Host " ADMINISTRATOR PRIVILEGES REQUIRED"
     Write-Host "==============================================="
     Write-Host ""
-    Write-Host "Please reopen PowerShell as Administrator."
+    Write-Host "Reopen PowerShell using: Run as Administrator"
     Write-Host ""
     Pause
     exit
 }
 
 # ------------------------------------------------
-# FUNCTIONS
+# WSL INSTALLER (ONLY USED BY OPTION 1)
 # ------------------------------------------------
 
-function Ensure-WSL {
+function Install-And-Configure-WSL {
 
-    Write-Host "Preparing WSL environment..."
+    Write-Host ""
+    Write-Host "Installing / Configuring WSL..."
 
     dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
     dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
 
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
         wsl --install -d Ubuntu
-        Write-Host "Reboot required."
+        Write-Host ""
+        Write-Host "Reboot required. Restart Windows and run again."
         Pause
         exit
     }
 
     wsl --set-default-version 2
+
+@"
+[wsl2]
+memory=6GB
+processors=4
+swap=8GB
+"@ | Out-File "$env:USERPROFILE\.wslconfig" -Encoding ASCII -Force
+
     wsl --shutdown
 }
+
+# ------------------------------------------------
+# SCRIPT EXECUTION HELPER
+# ------------------------------------------------
 
 function Invoke-WSLScript {
     param (
@@ -61,15 +75,11 @@ function Invoke-WSLScript {
         Remove-Item $localScript -Force
     }
 
-    Write-Host ""
-    Write-Host "Downloading: $LocalName"
-    Write-Host ""
-
     try {
         Invoke-WebRequest $ScriptUrl -OutFile $localScript -UseBasicParsing
     }
     catch {
-        Write-Host "❌ Download failed."
+        Write-Host "❌ Failed to download script."
         Pause
         return
     }
@@ -86,34 +96,52 @@ function Invoke-WSLScript {
     Remove-Item $localScript -Force -ErrorAction SilentlyContinue
 }
 
-function Run-LocalDirect {
+# ------------------------------------------------
+# MODE 1 – FULL INSTALL + BUILD
+# ------------------------------------------------
+
+function Run-LocalInstallBuild {
 
     Clear-Host
-    Write-Host "=== MODE: LOCAL DIRECT BUILD ==="
+    Write-Host "=== MODE 1: INSTALL WSL + DIRECT BUILD ==="
 
-    Ensure-WSL
+    Install-And-Configure-WSL
 
     Invoke-WSLScript `
         "$ScriptBase/build_orangefox_a14.sh" `
         "direct_build_a14.sh"
 }
 
+# ------------------------------------------------
+# MODE 2 – RUNNER MODE (NO WSL INSTALL)
+# ------------------------------------------------
+
 function Run-LocalRunner {
 
     Clear-Host
-    Write-Host "=== MODE: LOCAL RUNNER PIPELINE ==="
+    Write-Host "=== MODE 2: LOCAL RUNNER PIPELINE ==="
 
-    Ensure-WSL
+    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
+        Write-Host ""
+        Write-Host "❌ WSL not installed."
+        Write-Host "Run Option 1 first."
+        Pause
+        return
+    }
 
     Invoke-WSLScript `
         "$ScriptBase/local_runner_a14.sh" `
         "runner_build_a14.sh"
 }
 
+# ------------------------------------------------
+# MODE 3 – CLOUD BUILD
+# ------------------------------------------------
+
 function Run-CloudBuild {
 
     Clear-Host
-    Write-Host "=== MODE: CLOUD BUILD ==="
+    Write-Host "=== MODE 3: CLOUD BUILD ==="
 
     $workflowUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/actions/workflows/build.yml/dispatches"
 
@@ -149,15 +177,19 @@ Write-Host " OrangeFox Android 14 Installer v$Version"
 Write-Host "==============================================="
 Write-Host ""
 
-Write-Host "1) Local Direct WSL Build"
-Write-Host "2) Local Runner Mode (Pipeline UI)"
+Write-Host "1) Install WSL + Local Direct Build"
+Write-Host "2) Local Runner Mode (WSL already installed)"
 Write-Host "3) Cloud GitHub Build"
 Write-Host ""
 $choice = Read-Host "Select option"
 
 switch ($choice) {
-    "1" { Run-LocalDirect }
+    "1" { Run-LocalInstallBuild }
     "2" { Run-LocalRunner }
     "3" { Run-CloudBuild }
     default { Write-Host "Invalid selection."; Pause }
 }
+
+Write-Host ""
+Write-Host "Done."
+Pause
