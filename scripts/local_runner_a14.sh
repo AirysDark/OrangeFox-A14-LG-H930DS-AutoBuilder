@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ==========================================
-# OrangeFox Android 14 LAUNCHER
+# OrangeFox Android 14 LAUNCHER v2
 # LG V30 H930DS (joan)
 # ==========================================
 
-set -euo pipefail
+set -eo pipefail
 
 ROOT="$HOME/android14"
 DEVICE="joan"
@@ -21,8 +21,18 @@ mkdir -p "$ROOT"
 # Verify Linux Environment
 # --------------------------------
 
-if [[ "$OSTYPE" != "linux-gnu"* ]]; then
+if [[ "$(uname -s)" != "Linux" ]]; then
     echo "❌ This script must be run inside Linux / WSL."
+    exit 1
+fi
+
+# --------------------------------
+# Ensure repo exists
+# --------------------------------
+
+if ! command -v repo >/dev/null 2>&1; then
+    echo "❌ repo tool not found."
+    echo "Install repo first inside WSL."
     exit 1
 fi
 
@@ -34,6 +44,7 @@ direct_build() {
 
     echo ""
     echo "=== CLIENT MODE: Direct Build ==="
+    echo ""
 
     cd "$ROOT"
 
@@ -47,13 +58,13 @@ direct_build() {
     git clone -b fox_14.1 https://gitlab.com/OrangeFox/bootable/Recovery.git bootable/recovery
 
     [ ! -d "device/lge/$DEVICE" ] && \
-    git clone https://github.com/LineageOS/android_device_lge_joan.git device/lge/$DEVICE
+        git clone https://github.com/LineageOS/android_device_lge_joan.git device/lge/$DEVICE
 
     [ ! -d "kernel/lge/msm8998" ] && \
-    git clone https://github.com/LineageOS/android_kernel_lge_msm8998.git kernel/lge/msm8998
+        git clone https://github.com/LineageOS/android_kernel_lge_msm8998.git kernel/lge/msm8998
 
     [ ! -d "vendor/lge" ] && \
-    git clone https://github.com/TheMuppets/proprietary_vendor_lge.git vendor/lge
+        git clone https://github.com/TheMuppets/proprietary_vendor_lge.git vendor/lge
 
     export USE_CCACHE=1
     ccache -M "$CCACHE_SIZE"
@@ -69,6 +80,7 @@ runner_build() {
 
     echo ""
     echo "=== SERVER MODE: Runner Pipeline ==="
+    echo ""
 
     direct_build
 }
@@ -78,7 +90,7 @@ package_artifact() {
     OUTDIR="$ROOT/out/target/product/$DEVICE"
     ZIPNAME="OrangeFox-${DEVICE}-${VERSION}.zip"
 
-    cd "$OUTDIR"
+    cd "$OUTDIR" || exit 1
 
     if [ ! -f recovery.img ]; then
         echo "❌ recovery.img not found!"
@@ -109,12 +121,16 @@ options_menu() {
         echo ""
         read -p "Select option: " opt
 
-        case $opt in
+        case "$opt" in
             1)
-                read -p "Enter thread count: " THREADS
+                read -p "Enter thread count: " new_threads
+                if [[ "$new_threads" =~ ^[0-9]+$ ]]; then
+                    THREADS="$new_threads"
+                fi
                 ;;
             2)
-                read -p "Enter ccache size (e.g. 20G): " CCACHE_SIZE
+                read -p "Enter ccache size (e.g. 20G): " new_ccache
+                CCACHE_SIZE="$new_ccache"
                 ;;
             3)
                 break
@@ -142,7 +158,7 @@ while true; do
     echo ""
     read -p "Select option: " choice
 
-    case $choice in
+    case "$choice" in
         1) direct_build ;;
         2) runner_build ;;
         3) options_menu ;;
