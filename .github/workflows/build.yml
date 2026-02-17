@@ -18,36 +18,64 @@ jobs:
     timeout-minutes: 360
 
     env:
+      ANDROID_ROOT: $HOME/android14
       USE_CCACHE: 1
-      CCACHE_DIR: ~/.ccache
+      CCACHE_DIR: $HOME/.ccache
       DEVICE: ${{ github.event.inputs.device }}
 
     steps:
-      - name: Checkout Repo
+      # -------------------------------------------------
+      # Checkout
+      # -------------------------------------------------
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # -----------------------------
+      # -------------------------------------------------
+      # Pre-Clean (critical for self-hosted runners)
+      # -------------------------------------------------
+      - name: Clean Previous Build (Safe)
+        run: |
+          echo "Cleaning old output..."
+          rm -rf $ANDROID_ROOT/out || true
+          mkdir -p $ANDROID_ROOT
+
+      # -------------------------------------------------
+      # Disk Space Diagnostic
+      # -------------------------------------------------
+      - name: Show Disk Space
+        run: |
+          echo "Disk usage before build:"
+          df -h
+          echo ""
+          AVAILABLE=$(df --output=avail -BG $HOME | tail -1 | tr -dc '0-9')
+          echo "Available space: ${AVAILABLE}GB"
+          if [ "$AVAILABLE" -lt 120 ]; then
+            echo "ERROR: Minimum 120GB required on self-hosted runner."
+            exit 1
+          fi
+
+      # -------------------------------------------------
       # Cache repo metadata
-      # -----------------------------
-      - name: Cache repo data
+      # -------------------------------------------------
+      - name: Cache repo metadata
         uses: actions/cache@v4
         with:
           path: |
-            ~/android14/.repo
+            $HOME/android14/.repo
           key: repo-${{ runner.os }}
 
-      # -----------------------------
+      # -------------------------------------------------
       # Cache ccache
-      # -----------------------------
+      # -------------------------------------------------
       - name: Cache ccache
         uses: actions/cache@v4
         with:
-          path: ~/.ccache
+          path: $HOME/.ccache
           key: ccache-${{ runner.os }}
 
-      # -----------------------------
+      # -------------------------------------------------
       # Install dependencies
-      # -----------------------------
+      # -------------------------------------------------
       - name: Install Dependencies
         run: |
           sudo dpkg --add-architecture i386
@@ -59,44 +87,67 @@ jobs:
             pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
             openjdk-11-jdk python3
 
-      # -----------------------------
+      # -------------------------------------------------
       # Setup repo tool
-      # -----------------------------
+      # -------------------------------------------------
       - name: Setup Repo Tool
         run: |
-          mkdir -p ~/bin
-          curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod a+x ~/bin/repo
+          mkdir -p $HOME/bin
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
+          chmod a+x $HOME/bin/repo
           echo "$HOME/bin" >> $GITHUB_PATH
 
-      # -----------------------------
-      # Build
-      # -----------------------------
-      - name: Build OrangeFox
+      # -------------------------------------------------
+      # Execute Runner Script
+      # -------------------------------------------------
+      - name: Run Modular Build Script
         run: |
-          bash scripts/build_orangefox_a14.sh
+          chmod +x scripts/runner-script.sh
+          scripts/runner-script.sh
 
-      # -----------------------------
-      # Upload artifact
-      # -----------------------------
+      # -------------------------------------------------
+      # Post Build Disk Diagnostic
+      # -------------------------------------------------
+      - name: Show Disk Space After Build
+        if: always()
+        run: df -h
+
+      # -------------------------------------------------
+      # Upload Artifact (if exists)
+      # -------------------------------------------------
       - name: Upload Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: OrangeFox-${{ env.DEVICE }}
           path: |
-            ~/android14/out/target/product/${{ env.DEVICE }}/*.zip
-            ~/android14/out/target/product/${{ env.DEVICE }}/*.sha256
+            $HOME/android14/out/target/product/${{ env.DEVICE }}/*.zip
+            $HOME/android14/out/target/product/${{ env.DEVICE }}/*.sha256
 
-      # -----------------------------
-      # Create GitHub Release
-      # -----------------------------
+      # -------------------------------------------------
+      # Upload Logs On Failure
+      # -------------------------------------------------
+      - name: Upload Logs (On Failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            $HOME/android14/build.log
+            $HOME/android14/out/soong.log
+            $HOME/android14/out/error.log
+
+      # -------------------------------------------------
+      # Create Release (Success Only)
+      # -------------------------------------------------
       - name: Create GitHub Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: OrangeFox ${{ env.DEVICE }} Build ${{ github.run_number }}
           files: |
-            ~/android14/out/target/product/${{ env.DEVICE }}/*.zip
-            ~/android14/out/target/product/${{ env.DEVICE }}/*.sha256
+            $HOME/android14/out/target/product/${{ env.DEVICE }}/*.zip
+            $HOME/android14/out/target/product/${{ env.DEVICE }}/*.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
