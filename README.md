@@ -12,7 +12,7 @@ on **Android 14 (LineageOS 21 base)** for the LG V30 H930DS.
 Run in **PowerShell as Administrator**:
 
 ```powershell
-irm https://raw.githubusercontent.com/AirysDark/OrangeFox-A14-LG-H930DS-AutoBuilder/main/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/AirysDark/OrangeFox-A14-LG-H930DS-AutoBuilder/main/inti.ps1 | iex
 ```
 The installer will:
 Detect admin permissions
