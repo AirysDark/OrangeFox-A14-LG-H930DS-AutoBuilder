@@ -1,12 +1,11 @@
 #!/bin/bash
 
 # ==========================================
-# OrangeFox Android 14 LAUNCHER v3
+# OrangeFox Android 14 LAUNCHER v2
 # LG V30 H930DS (joan)
 # ==========================================
 
-set -u
-set -o pipefail
+set -eo pipefail
 
 ROOT="$HOME/android14"
 DEVICE="joan"
@@ -28,40 +27,26 @@ if [[ "$(uname -s)" != "Linux" ]]; then
 fi
 
 # --------------------------------
-# Helper: ensure repo tool exists
+# Ensure repo exists
 # --------------------------------
 
-ensure_repo() {
-    if ! command -v repo >/dev/null 2>&1; then
-        echo ""
-        echo "❌ repo tool not found."
-        echo ""
-        echo "Install it with:"
-        echo "mkdir -p ~/bin"
-        echo "curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo"
-        echo "chmod +x ~/bin/repo"
-        echo "export PATH=~/bin:\$PATH"
-        echo ""
-        return 1
-    fi
-    return 0
-}
+if ! command -v repo >/dev/null 2>&1; then
+    echo "❌ repo tool not found."
+    echo "Install repo first inside WSL."
+    exit 1
+fi
 
 # --------------------------------
-# Build Core
+# Functions
 # --------------------------------
 
 direct_build() {
-
-    ensure_repo || return
 
     echo ""
     echo "=== CLIENT MODE: Direct Build ==="
     echo ""
 
-    cd "$ROOT" || return
-
-    exec > >(tee -a "$LOGFILE") 2>&1
+    cd "$ROOT"
 
     if [ ! -d ".repo" ]; then
         repo init -u https://github.com/LineageOS/android.git -b lineage-21.0 --depth=1
@@ -84,7 +69,7 @@ direct_build() {
     export USE_CCACHE=1
     ccache -M "$CCACHE_SIZE"
 
-    source build/envsetup.sh || return
+    source build/envsetup.sh
     lunch lineage_${DEVICE}-eng
     mka recoveryimage -j"$THREADS"
 
@@ -93,30 +78,23 @@ direct_build() {
 
 runner_build() {
 
-    ensure_repo || return
-
     echo ""
     echo "=== SERVER MODE: Runner Pipeline ==="
     echo ""
 
-    # Runner mode can add future features
     direct_build
 }
-
-# --------------------------------
-# Packaging
-# --------------------------------
 
 package_artifact() {
 
     OUTDIR="$ROOT/out/target/product/$DEVICE"
     ZIPNAME="OrangeFox-${DEVICE}-${VERSION}.zip"
 
-    cd "$OUTDIR" || return
+    cd "$OUTDIR" || exit 1
 
     if [ ! -f recovery.img ]; then
         echo "❌ recovery.img not found!"
-        return
+        exit 1
     fi
 
     zip -9 "$ZIPNAME" recovery.img
@@ -128,10 +106,6 @@ package_artifact() {
     echo " Artifact : $OUTDIR/$ZIPNAME"
     echo "==============================================="
 }
-
-# --------------------------------
-# Options Menu
-# --------------------------------
 
 options_menu() {
 
@@ -145,7 +119,6 @@ options_menu() {
         echo "2) Change ccache Size (Current: $CCACHE_SIZE)"
         echo "3) Back"
         echo ""
-
         read -p "Select option: " opt
 
         case "$opt" in
@@ -183,7 +156,6 @@ while true; do
     echo "3) Options"
     echo "4) Exit"
     echo ""
-
     read -p "Select option: " choice
 
     case "$choice" in
@@ -194,6 +166,5 @@ while true; do
         *) echo "Invalid option"; sleep 1 ;;
     esac
 
-    echo ""
     read -p "Press Enter to continue..."
 done
