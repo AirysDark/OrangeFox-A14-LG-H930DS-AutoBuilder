@@ -1,26 +1,24 @@
 # ==============================================
-# OrangeFox Android 14 Bootstrap v7 (Logging)
+# OrangeFox Android 14 Bootstrap v8 (Manual Admin)
 # ==============================================
 
 $RepoOwner  = "AirysDark"
 $RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version    = "7.0.0"
+$Version    = "8.0.0"
 
 $ErrorLog = "C:\orangefox_error.log"
 
 # ------------------------------------------------
-# Error Logging System
+# Error Logging
 # ------------------------------------------------
 
 function Write-ErrorLog {
     param ($Message)
-
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Add-Content -Path $ErrorLog -Value "[$timestamp] $Message"
 }
 
-# Catch all terminating errors
 $ErrorActionPreference = "Stop"
 
 trap {
@@ -33,7 +31,7 @@ trap {
 }
 
 # ------------------------------------------------
-# Elevation Check
+# ADMIN CHECK (NO AUTO ELEVATION)
 # ------------------------------------------------
 
 $isAdmin = ([Security.Principal.WindowsPrincipal] `
@@ -43,24 +41,24 @@ $isAdmin = ([Security.Principal.WindowsPrincipal] `
 if (-not $isAdmin) {
 
     Write-Host ""
-    Write-Host "Administrator privileges required."
-    Write-Host "Relaunching..."
+    Write-Host "==============================================="
+    Write-Host " ADMINISTRATOR PRIVILEGES REQUIRED"
+    Write-Host "==============================================="
+    Write-Host ""
+    Write-Host "Please close this window."
+    Write-Host "Right-click PowerShell and choose:"
+    Write-Host "'Run as Administrator'"
+    Write-Host ""
+    Write-Host "Then run the installer again."
     Write-Host ""
 
-    try {
-        Start-Process -FilePath "powershell.exe" `
-            -Verb RunAs `
-            -ArgumentList "-NoExit -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/bootstrap.ps1 | iex`""
-    }
-    catch {
-        Write-ErrorLog "Failed to elevate: $($_.Exception.Message)"
-    }
-
+    Write-ErrorLog "Script launched without Administrator privileges."
+    Pause
     exit
 }
 
 # ------------------------------------------------
-# Admin Section Starts Here
+# MAIN MENU
 # ------------------------------------------------
 
 Clear-Host
@@ -81,11 +79,13 @@ $choice = Read-Host "Select option"
 if ($choice -eq "1") {
 
     try {
+
         $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
 
         if ($freeGB -lt 120) {
             Write-ErrorLog "Insufficient disk space: $freeGB GB"
-            Write-Host "❌ Minimum 120GB required."
+            Write-Host ""
+            Write-Host "❌ Minimum 120GB required for LOCAL build."
             Pause
             exit
         }
@@ -97,10 +97,10 @@ if ($choice -eq "1") {
         dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
 
         if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
-            Write-Host "Installing WSL + Ubuntu..."
             wsl --install -d Ubuntu
             Write-ErrorLog "WSL installed — reboot required"
-            Write-Host "Reboot required. Restart Windows."
+            Write-Host ""
+            Write-Host "Reboot required. Restart Windows and re-run installer."
             Pause
             exit
         }
@@ -111,7 +111,8 @@ if ($choice -eq "1") {
         if ($distros -notmatch "Ubuntu") {
             wsl --install -d Ubuntu
             Write-ErrorLog "Ubuntu installed — reboot required"
-            Write-Host "Reboot required. Restart Windows."
+            Write-Host ""
+            Write-Host "Reboot required. Restart Windows and re-run installer."
             Pause
             exit
         }
@@ -152,6 +153,7 @@ swap=8GB
 elseif ($choice -eq "2") {
 
     try {
+
         $workflowUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/actions/workflows/build.yml/dispatches"
 
         $token = Read-Host "Enter GitHub Personal Access Token" -AsSecureString
