@@ -1,17 +1,16 @@
 # ==============================================
-# OrangeFox Android 14 ELITE Bootstrap v4
+# OrangeFox Android 14 ELITE Bootstrap v5
 # ==============================================
 
 $RepoOwner    = "AirysDark"
 $RepoName     = "OrangeFox-A14-LG-H930DS-AutoBuilder"
 $BootstrapUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/bootstrap.ps1"
 $ScriptBase   = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version      = "4.0.0"
+$Version      = "5.0.0"
 
 $LogFile    = "$env:TEMP\of_bootstrap.log"
 $TempScript = "$env:TEMP\of_bootstrap_elevated.ps1"
 
-# Prevent infinite elevation loop
 if ($env:OF_ALREADY_ELEVATED -eq "1") {
     $AlreadyElevated = $true
 } else {
@@ -28,16 +27,11 @@ function Require-Admin {
 
     if (-not $isAdmin -and -not $AlreadyElevated) {
 
-        Write-Host "Restarting as Administrator..."
-
-        # Download latest script to temp
         Invoke-WebRequest $BootstrapUrl -OutFile $TempScript -UseBasicParsing
 
-        # Launch new elevated console window
         Start-Process -FilePath "powershell.exe" `
             -Verb RunAs `
             -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$TempScript`"" `
-            -WindowStyle Normal `
             -Environment @{ OF_ALREADY_ELEVATED = "1" }
 
         Stop-Transcript | Out-Null
@@ -53,41 +47,28 @@ Write-Host " OrangeFox Android 14 ELITE Installer v$Version"
 Write-Host "==============================================="
 Write-Host ""
 
-# --------------------------------------------
-# Windows Version Check
-# --------------------------------------------
-
-if ([Environment]::OSVersion.Version.Major -lt 10) {
-    Write-Host "❌ Windows 10 or newer required."
-    Pause
-    exit
-}
-
-# --------------------------------------------
-# Disk Space Check
-# --------------------------------------------
-
-$freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
-
-if ($freeGB -lt 120) {
-    Write-Host "❌ Minimum 120GB free space required."
-    Pause
-    exit
-}
-
-Write-Host "Disk OK ($freeGB GB free)"
-Write-Host ""
-
 Write-Host "1) Local WSL Build"
 Write-Host "2) Cloud GitHub Build"
 Write-Host ""
 $choice = Read-Host "Select option"
 
 # ============================================================
-# LOCAL WSL BUILD
+# LOCAL BUILD
 # ============================================================
 
 if ($choice -eq "1") {
+
+    # Disk check ONLY for local builds
+    $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
+
+    if ($freeGB -lt 120) {
+        Write-Host "❌ Minimum 120GB free space required for LOCAL build."
+        Pause
+        exit
+    }
+
+    Write-Host "Disk OK ($freeGB GB free)"
+    Write-Host ""
 
     Write-Host "Preparing WSL Environment..."
 
@@ -95,7 +76,6 @@ if ($choice -eq "1") {
     dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
 
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
-        Write-Host "Installing WSL + Ubuntu..."
         wsl --install -d Ubuntu
         Write-Host "Reboot required. Please restart Windows and re-run."
         Pause
@@ -106,14 +86,12 @@ if ($choice -eq "1") {
 
     $distros = wsl -l -q
     if ($distros -notmatch "Ubuntu") {
-        Write-Host "Installing Ubuntu..."
         wsl --install -d Ubuntu
         Write-Host "Reboot required. Please restart Windows and re-run."
         Pause
         exit
     }
 
-    # Configure WSL memory
     $configPath = "$env:USERPROFILE\.wslconfig"
 
 @"
@@ -125,17 +103,12 @@ swap=8GB
 
     wsl --shutdown
 
-    Write-Host "WSL ready."
-
-    # Download Linux build script
     $localScript = "$env:TEMP\of_build.sh"
     Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript
 
     $drive = $localScript.Substring(0,1).ToLower()
     $path  = $localScript.Substring(3) -replace '\\','/'
     $wslPath = "/mnt/$drive/$path"
-
-    Write-Host "Launching Linux build..."
 
     wsl bash -c "chmod +x $wslPath"
     wsl bash -c "$wslPath"
@@ -163,9 +136,7 @@ elseif ($choice -eq "2") {
         Accept = "application/vnd.github+json"
     }
 
-    $body = @{
-        ref = "main"
-    } | ConvertTo-Json
+    $body = @{ ref = "main" } | ConvertTo-Json
 
     try {
         Invoke-RestMethod -Uri $workflowUrl -Method POST -Headers $headers -Body $body
@@ -182,7 +153,6 @@ else {
 
 Write-Host ""
 Write-Host "Process complete."
-Write-Host "Log file: $LogFile"
 Write-Host ""
 Pause
 
