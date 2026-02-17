@@ -1,49 +1,41 @@
 # ==============================================
-# OrangeFox Android 14 ELITE Bootstrap v5
+# OrangeFox Android 14 Bootstrap v6 (Stable)
 # ==============================================
 
-$RepoOwner    = "AirysDark"
-$RepoName     = "OrangeFox-A14-LG-H930DS-AutoBuilder"
-$BootstrapUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/bootstrap.ps1"
-$ScriptBase   = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
-$Version      = "5.0.0"
+$RepoOwner  = "AirysDark"
+$RepoName   = "OrangeFox-A14-LG-H930DS-AutoBuilder"
+$ScriptBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/scripts"
+$Version    = "6.0.0"
 
-$LogFile    = "$env:TEMP\of_bootstrap.log"
-$TempScript = "$env:TEMP\of_bootstrap_elevated.ps1"
+# --------------------------------------------
+# Check Admin FIRST — do nothing else before
+# --------------------------------------------
 
-if ($env:OF_ALREADY_ELEVATED -eq "1") {
-    $AlreadyElevated = $true
-} else {
-    $AlreadyElevated = $false
+$isAdmin = ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $isAdmin) {
+
+    Write-Host ""
+    Write-Host "This installer requires Administrator privileges."
+    Write-Host "Relaunching as Administrator..."
+    Write-Host ""
+
+    Start-Process -FilePath "powershell.exe" `
+        -Verb RunAs `
+        -ArgumentList "-NoExit -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/bootstrap.ps1 | iex`""
+
+    exit
 }
 
-Start-Transcript -Path $LogFile -Append -ErrorAction SilentlyContinue | Out-Null
-
-function Require-Admin {
-
-    $isAdmin = ([Security.Principal.WindowsPrincipal] `
-        [Security.Principal.WindowsIdentity]::GetCurrent()
-        ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-    if (-not $isAdmin -and -not $AlreadyElevated) {
-
-        Invoke-WebRequest $BootstrapUrl -OutFile $TempScript -UseBasicParsing
-
-        Start-Process -FilePath "powershell.exe" `
-            -Verb RunAs `
-            -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$TempScript`"" `
-            -Environment @{ OF_ALREADY_ELEVATED = "1" }
-
-        Stop-Transcript | Out-Null
-        exit
-    }
-}
-
-Require-Admin
+# --------------------------------------------
+# From here down, we are guaranteed Admin
+# --------------------------------------------
 
 Clear-Host
 Write-Host "==============================================="
-Write-Host " OrangeFox Android 14 ELITE Installer v$Version"
+Write-Host " OrangeFox Android 14 Installer v$Version"
 Write-Host "==============================================="
 Write-Host ""
 
@@ -58,10 +50,10 @@ $choice = Read-Host "Select option"
 
 if ($choice -eq "1") {
 
-    # Disk check ONLY for local builds
     $freeGB = [math]::Round((Get-PSDrive C).Free / 1GB)
 
     if ($freeGB -lt 120) {
+        Write-Host ""
         Write-Host "❌ Minimum 120GB free space required for LOCAL build."
         Pause
         exit
@@ -70,14 +62,16 @@ if ($choice -eq "1") {
     Write-Host "Disk OK ($freeGB GB free)"
     Write-Host ""
 
-    Write-Host "Preparing WSL Environment..."
+    Write-Host "Enabling WSL features..."
 
-    dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
-    dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
+    dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+    dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
 
     if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
+        Write-Host "Installing WSL + Ubuntu..."
         wsl --install -d Ubuntu
-        Write-Host "Reboot required. Please restart Windows and re-run."
+        Write-Host ""
+        Write-Host "Reboot required. Restart Windows and re-run installer."
         Pause
         exit
     }
@@ -87,22 +81,25 @@ if ($choice -eq "1") {
     $distros = wsl -l -q
     if ($distros -notmatch "Ubuntu") {
         wsl --install -d Ubuntu
-        Write-Host "Reboot required. Please restart Windows and re-run."
+        Write-Host "Reboot required. Restart Windows and re-run."
         Pause
         exit
     }
 
-    $configPath = "$env:USERPROFILE\.wslconfig"
-
-@"
+    # Configure WSL memory
+    @"
 [wsl2]
 memory=6GB
 processors=4
 swap=8GB
-"@ | Out-File $configPath -Encoding ASCII -Force
+"@ | Out-File "$env:USERPROFILE\.wslconfig" -Encoding ASCII -Force
 
     wsl --shutdown
 
+    Write-Host "WSL ready."
+    Write-Host ""
+
+    # Download build script
     $localScript = "$env:TEMP\of_build.sh"
     Invoke-WebRequest "$ScriptBase/build_orangefox_a14.sh" -OutFile $localScript
 
@@ -122,7 +119,9 @@ swap=8GB
 
 elseif ($choice -eq "2") {
 
+    Write-Host ""
     Write-Host "Triggering GitHub Cloud Build..."
+    Write-Host ""
 
     $workflowUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/actions/workflows/build.yml/dispatches"
 
@@ -152,8 +151,5 @@ else {
 }
 
 Write-Host ""
-Write-Host "Process complete."
-Write-Host ""
+Write-Host "Done."
 Pause
-
-Stop-Transcript | Out-Null
