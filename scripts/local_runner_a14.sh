@@ -8,6 +8,15 @@
 set -euo pipefail
 trap 'echo ""; echo "❌ Build failed. See local_runner.log"; exit 1' ERR
 
+# --------------------------------
+# Verify Linux Environment
+# --------------------------------
+
+if [[ "$OSTYPE" != "linux-gnu"* ]]; then
+    echo "❌ This script must be run inside Linux / WSL."
+    exit 1
+fi
+
 ROOT="$HOME/android14"
 DEVICE="joan"
 THREADS="$(nproc)"
@@ -26,6 +35,17 @@ echo " Device  : $DEVICE"
 echo " Threads : $THREADS"
 echo " Root    : $ROOT"
 echo "==============================================="
+
+# --------------------------------
+# Ensure repo tool exists
+# --------------------------------
+
+if ! command -v repo >/dev/null 2>&1; then
+    echo ""
+    echo "❌ repo tool not found."
+    echo "Install repo inside WSL first."
+    exit 1
+fi
 
 # --------------------------------
 # Initialize Repo
@@ -57,9 +77,14 @@ git clone -b fox_14.1 https://gitlab.com/OrangeFox/bootable/Recovery.git bootabl
 
 echo "Cloning device trees..."
 
-[ ! -d "device/lge/$DEVICE" ] && git clone https://github.com/LineageOS/android_device_lge_joan.git device/lge/$DEVICE
-[ ! -d "kernel/lge/msm8998" ] && git clone https://github.com/LineageOS/android_kernel_lge_msm8998.git kernel/lge/msm8998
-[ ! -d "vendor/lge" ] && git clone https://github.com/TheMuppets/proprietary_vendor_lge.git vendor/lge
+[ ! -d "device/lge/$DEVICE" ] && \
+git clone https://github.com/LineageOS/android_device_lge_joan.git device/lge/$DEVICE
+
+[ ! -d "kernel/lge/msm8998" ] && \
+git clone https://github.com/LineageOS/android_kernel_lge_msm8998.git kernel/lge/msm8998
+
+[ ! -d "vendor/lge" ] && \
+git clone https://github.com/TheMuppets/proprietary_vendor_lge.git vendor/lge
 
 # --------------------------------
 # Build
@@ -94,7 +119,9 @@ sha256sum "$ZIPNAME" > "$ZIPNAME.sha256"
 echo ""
 echo "==============================================="
 echo " BUILD COMPLETE"
+echo "-----------------------------------------------"
 echo " Artifact : $OUTDIR/$ZIPNAME"
 echo " Checksum : $OUTDIR/$ZIPNAME.sha256"
 echo " Log File : $LOGFILE"
 echo "==============================================="
+echo ""
